@@ -2,6 +2,7 @@
 
 import argparse
 import csv
+import json
 import sys
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
@@ -225,7 +226,6 @@ def format_summary_text(metrics: Dict[str, object]) -> str:
     if skipped_tickets:
         lines.append("")
         lines.append("Skipped Tickets (Resolution Time):")
-        # Define clean ordering for skip reasons
         preferred_reasons = [
             "Unresolved / Missing resolution date",
             "Resolved before created",
@@ -242,7 +242,54 @@ def format_summary_text(metrics: Dict[str, object]) -> str:
     return "\n".join(lines)
 
 
-def process_tickets(file_path: Path) -> int:
+def format_summary_json(metrics: Dict[str, object]) -> str:
+    """Format ticket metrics into machine-readable JSON."""
+    total_tickets = metrics["total_tickets"]
+    category_counts: Counter = metrics["category_counts"]  # type: ignore
+    overall_avg_sec: Optional[float] = metrics["overall_average_seconds"]  # type: ignore
+    category_averages: Dict[str, Optional[float]] = metrics[
+        "category_average_seconds"
+    ]  # type: ignore
+    skipped_tickets: Dict[str, List[str]] = metrics["skipped_tickets"]  # type: ignore
+
+    categories_detail = {}
+    for cat in sorted(category_counts.keys()):
+        avg_sec = category_averages.get(cat)
+        categories_detail[cat] = {
+            "count": category_counts[cat],
+            "average_resolution_seconds": avg_sec,
+            "average_resolution_hours": (
+                round(avg_sec / 3600.0, 2) if avg_sec is not None else None
+            ),
+            "average_resolution_formatted": (
+                format_duration(avg_sec)
+                if avg_sec is not None
+                else "N/A (No resolved tickets)"
+            ),
+        }
+
+    overall_hours = (
+        round(overall_avg_sec / 3600.0, 2) if overall_avg_sec is not None else None
+    )
+    overall_formatted = (
+        format_duration(overall_avg_sec)
+        if overall_avg_sec is not None
+        else "N/A (No resolved tickets)"
+    )
+
+    payload = {
+        "total_tickets": total_tickets,
+        "overall_average_seconds": overall_avg_sec,
+        "overall_average_hours": overall_hours,
+        "overall_average_formatted": overall_formatted,
+        "category_counts": dict(sorted(category_counts.items())),
+        "categories": categories_detail,
+        "skipped_tickets": dict(skipped_tickets),
+    }
+    return json.dumps(payload, indent=2)
+
+
+def process_tickets(file_path: Path, output_json: bool = False) -> int:
     """Core processor for ticket CSV file."""
     rows, fatal_errors, row_warnings = read_and_validate_csv(file_path)
     if fatal_errors:
@@ -257,8 +304,10 @@ def process_tickets(file_path: Path) -> int:
     for warn in resolution_warnings:
         print(warn, file=sys.stderr)
 
-    output = format_summary_text(metrics)
-    print(output)
+    if output_json:
+        print(format_summary_json(metrics))
+    else:
+        print(format_summary_text(metrics))
     return 0
 
 
@@ -272,8 +321,13 @@ def main(argv: Optional[List[str]] = None) -> int:
         type=Path,
         help="Path to the ticket CSV file.",
     )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output summary as structured JSON.",
+    )
     args = parser.parse_args(argv)
-    return process_tickets(args.file)
+    return process_tickets(args.file, output_json=args.json)
 
 
 if __name__ == "__main__":
