@@ -4,10 +4,10 @@
 
 **Blocked by:** 02: SLA Breach Detection and Target Overrides
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Accept `Date | string | number` for `createdAt`, `resolvedAt`, and `checkTime`
-- [ ] Throw descriptive `Error` when any timestamp is an invalid date string or NaN
-- [ ] Throw descriptive `Error` when `priority` is not in the recognized target map
-- [ ] Throw descriptive `Error` when `resolvedAt` is earlier than `createdAt`
-- [ ] All unit tests pass in Vitest
+- [x] Accept `Date | string | number` for `createdAt`, `resolvedAt`, and `checkTime`
+- [x] Throw descriptive `Error` when any timestamp is an invalid date string or NaN
+- [x] Throw descriptive `Error` when `priority` is not in the recognized target map
+- [x] Throw descriptive `Error` when `resolvedAt` is earlier than `createdAt`
+- [x] All unit tests pass in Vitest
