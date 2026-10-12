@@ -4,11 +4,11 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] CLI accepts a CSV file path as a positional argument: `python ticket_summary.py <file>`
-- [ ] Strips leading and trailing whitespace from CSV headers and cells
-- [ ] Groups tickets by category and counts them
-- [ ] Outputs an alphabetically sorted category summary to `stdout`
-- [ ] Exits with code `1` and prints an error message to `stderr` if the file does not exist, cannot be read, or is empty
-- [ ] Automated tests using `pytest` verify valid summary generation, alphabetical sorting, whitespace handling, and missing file error behavior
+- [x] CLI accepts a CSV file path as a positional argument: `python ticket_summary.py <file>`
+- [x] Strips leading and trailing whitespace from CSV headers and cells
+- [x] Groups tickets by category and counts them
+- [x] Outputs an alphabetically sorted category summary to `stdout`
+- [x] Exits with code `1` and prints an error message to `stderr` if the file does not exist, cannot be read, or is empty
+- [x] Automated tests using `pytest` verify valid summary generation, alphabetical sorting, whitespace handling, and missing file error behavior
