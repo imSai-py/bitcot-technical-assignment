@@ -35,3 +35,24 @@ export function calculateSlaDeadline(ticket: Ticket, options?: SlaOptions): Date
 
   return new Date(createdTime + targetMs);
 }
+
+export function checkSlaBreach(ticket: Ticket, options?: SlaOptions): SlaResult {
+  const deadline = calculateSlaDeadline(ticket, options);
+  const deadlineMs = deadline.getTime();
+
+  const referenceTime = ticket.resolvedAt !== undefined
+    ? new Date(ticket.resolvedAt)
+    : options?.checkTime !== undefined
+      ? new Date(options.checkTime)
+      : new Date();
+
+  const referenceMs = referenceTime.getTime();
+  const isBreached = referenceMs > deadlineMs;
+  const breachDurationMs = isBreached ? referenceMs - deadlineMs : 0;
+
+  return {
+    isBreached,
+    breachDurationMs,
+    deadline,
+  };
+}
