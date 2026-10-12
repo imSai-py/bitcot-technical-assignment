@@ -1,3 +1,4 @@
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -172,3 +173,45 @@ def test_skipped_tickets_reporting_on_stdout(tmp_path: Path):
     assert "2 hours, 0 minutes (2.00 hours)" in result.stdout
     # All 4 valid rows counted in DevOps
     assert "DevOps: 4" in result.stdout
+
+
+def test_json_output_flag(tmp_path: Path):
+    csv_file = tmp_path / "tickets.csv"
+    csv_content = (
+        "ticket_id,created_at,resolved_at,category,priority,status\n"
+        "T-1,2026-01-01 10:00:00,2026-01-01 12:00:00,Billing,low,resolved\n"  # 2.0 hrs
+        "T-2,2026-01-01 10:00:00,2026-01-01 16:00:00,Billing,medium,resolved\n"  # 6.0 hrs
+        "T-3,2026-01-01 10:00:00,,Hardware,high,open\n"  # unresolved
+    )
+    csv_file.write_text(csv_content, encoding="utf-8")
+
+    result = run_cli(str(csv_file), "--json")
+    assert result.returncode == 0
+
+    data = json.loads(result.stdout)
+    assert data["total_tickets"] == 3
+    assert data["category_counts"] == {"Billing": 2, "Hardware": 1}
+    assert data["overall_average_hours"] == 4.0
+    assert data["categories"]["Billing"]["count"] == 2
+    assert data["categories"]["Billing"]["average_resolution_hours"] == 4.0
+    assert data["categories"]["Hardware"]["count"] == 1
+    assert data["categories"]["Hardware"]["average_resolution_hours"] is None
+    assert "T-3" in data["skipped_tickets"]["Unresolved / Missing resolution date"]
+
+
+def test_json_output_with_warnings_keeps_stdout_valid_json(tmp_path: Path):
+    csv_file = tmp_path / "mixed.csv"
+    csv_content = (
+        "ticket_id,created_at,resolved_at,category,priority,status\n"
+        ",2026-01-01 10:00:00,2026-01-01 11:00:00,Billing,low,resolved\n"  # Row 2 missing ticket_id
+        "T-1,2026-01-01 10:00:00,2026-01-01 12:00:00,Billing,high,resolved\n"  # valid
+    )
+    csv_file.write_text(csv_content, encoding="utf-8")
+
+    result = run_cli(str(csv_file), "--json")
+    assert result.returncode == 0
+
+    assert "Row 2: Missing ticket_id" in result.stderr
+    data = json.loads(result.stdout)
+    assert data["total_tickets"] == 1
+    assert data["category_counts"] == {"Billing": 1}
