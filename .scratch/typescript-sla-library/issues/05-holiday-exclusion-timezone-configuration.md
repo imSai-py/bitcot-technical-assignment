@@ -4,9 +4,9 @@
 
 **Blocked by:** 04: Business Hours Calculation Engine
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Support `holidays?: (Date | string | number)[]` in business hours config
-- [ ] Skip designated holidays like weekends during SLA calculations
-- [ ] Support custom timezone or UTC offset in business hours config
-- [ ] All unit tests pass in Vitest
+- [x] Support `holidays?: (Date | string | number)[]` in business hours config
+- [x] Skip designated holidays like weekends during SLA calculations
+- [x] Support custom timezone or UTC offset in business hours config
+- [x] All unit tests pass in Vitest

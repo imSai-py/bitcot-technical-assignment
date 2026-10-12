@@ -1,5 +1,7 @@
 export type Priority = 'urgent' | 'high' | 'normal' | 'low';
 
+export const VALID_PRIORITIES: readonly Priority[] = ['urgent', 'high', 'normal', 'low'] as const;
+
 export interface Ticket {
   priority: Priority;
   createdAt: Date | string | number;
@@ -13,9 +15,8 @@ export interface SlaResult {
 }
 
 export interface BusinessHoursConfig {
-  startHour?: number;
-  endHour?: number;
   holidays?: (Date | string | number)[];
+  timezone?: string;
   timezoneOffsetHours?: number;
 }
 
@@ -32,6 +33,9 @@ export const DEFAULT_SLA_TARGET_HOURS: Record<Priority, number> = {
   low: 72,
 };
 
+const BUSINESS_START_HOUR = 9;
+const BUSINESS_END_HOUR = 18;
+
 function parseAndValidateDate(value: Date | string | number, fieldName: string): Date {
   const date = value instanceof Date ? new Date(value.getTime()) : new Date(value);
   if (isNaN(date.getTime())) {
@@ -41,6 +45,10 @@ function parseAndValidateDate(value: Date | string | number, fieldName: string):
 }
 
 function resolveTargetHours(priority: Priority, options?: SlaOptions): number {
+  if (!VALID_PRIORITIES.includes(priority)) {
+    throw new Error(`Unsupported priority: ${String(priority)}`);
+  }
+
   const targetHours =
     options?.customTargetsHours?.[priority] ?? DEFAULT_SLA_TARGET_HOURS[priority];
 
@@ -50,15 +58,13 @@ function resolveTargetHours(priority: Priority, options?: SlaOptions): number {
     isNaN(targetHours) ||
     targetHours <= 0
   ) {
-    throw new Error(`Unsupported priority: ${String(priority)}`);
+    throw new Error(`Invalid target hours for priority '${String(priority)}': ${String(targetHours)}`);
   }
 
   return targetHours;
 }
 
 interface ResolvedBusinessHoursConfig {
-  startHour: number;
-  endHour: number;
   holidayStrings: Set<string>;
   timezoneOffsetMs: number;
 }
@@ -70,6 +76,50 @@ function toDateString(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+function getEndOfBusinessDay(d: Date): Date {
+  const endOfDay = new Date(d.getTime());
+  endOfDay.setUTCHours(BUSINESS_END_HOUR, 0, 0, 0);
+  return endOfDay;
+}
+
+function getIanaTimezoneOffsetHours(timeZone: string, refDate: Date = new Date()): number {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
+    const parts = formatter.formatToParts(refDate);
+    const getPart = (type: string) => Number(parts.find(p => p.type === type)?.value);
+    const year = getPart('year');
+    const month = getPart('month');
+    const day = getPart('day');
+    const rawHour = getPart('hour');
+    const hour = rawHour === 24 ? 0 : rawHour;
+    const minute = getPart('minute');
+    const second = getPart('second');
+
+    const localUtcMs = Date.UTC(year, month - 1, day, hour, minute, second);
+    const actualUtcMs = Date.UTC(
+      refDate.getUTCFullYear(),
+      refDate.getUTCMonth(),
+      refDate.getUTCDate(),
+      refDate.getUTCHours(),
+      refDate.getUTCMinutes(),
+      refDate.getUTCSeconds()
+    );
+
+    return (localUtcMs - actualUtcMs) / (3600 * 1000);
+  } catch {
+    throw new Error(`Invalid timezone specified: ${timeZone}`);
+  }
+}
+
 function resolveBusinessHoursConfig(
   option?: boolean | BusinessHoursConfig
 ): ResolvedBusinessHoursConfig | null {
@@ -78,61 +128,74 @@ function resolveBusinessHoursConfig(
   }
 
   const rawConfig: BusinessHoursConfig = typeof option === 'object' ? option : {};
-  const startHour = rawConfig.startHour ?? 9;
-  const endHour = rawConfig.endHour ?? 18;
-  const timezoneOffsetHours = rawConfig.timezoneOffsetHours ?? 0;
+
+  let timezoneOffsetHours = 0;
+  if (rawConfig.timezone !== undefined) {
+    timezoneOffsetHours = getIanaTimezoneOffsetHours(rawConfig.timezone);
+  } else if (rawConfig.timezoneOffsetHours !== undefined) {
+    if (
+      !Number.isFinite(rawConfig.timezoneOffsetHours) ||
+      Math.abs(rawConfig.timezoneOffsetHours) > 14
+    ) {
+      throw new Error(
+        `Invalid timezoneOffsetHours: ${String(rawConfig.timezoneOffsetHours)}. Must be a finite number between -14 and 14.`
+      );
+    }
+    timezoneOffsetHours = rawConfig.timezoneOffsetHours;
+  }
+
   const timezoneOffsetMs = timezoneOffsetHours * 60 * 60 * 1000;
 
   const holidayStrings = new Set<string>();
   if (rawConfig.holidays && Array.isArray(rawConfig.holidays)) {
-    for (const h of rawConfig.holidays) {
-      const hDate = parseAndValidateDate(h, 'holiday');
-      // Adjust holiday date to local timezone perspective
-      const localHDate = new Date(hDate.getTime() + timezoneOffsetMs);
-      holidayStrings.add(toDateString(localHDate));
+    for (const rawHoliday of rawConfig.holidays) {
+      if (typeof rawHoliday === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(rawHoliday.trim())) {
+        holidayStrings.add(rawHoliday.trim());
+      } else {
+        const holidayDate = parseAndValidateDate(rawHoliday, 'holiday');
+        holidayStrings.add(toDateString(holidayDate));
+      }
     }
   }
 
   return {
-    startHour,
-    endHour,
     holidayStrings,
     timezoneOffsetMs,
   };
 }
 
 function advanceToNextBusinessWindow(
-  d: Date,
+  date: Date,
   config: ResolvedBusinessHoursConfig
 ): Date {
-  const curr = new Date(d.getTime());
+  const currentDate = new Date(date.getTime());
 
   while (true) {
-    const dayOfWeek = curr.getUTCDay();
+    const dayOfWeek = currentDate.getUTCDay();
     const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-    const isHoliday = config.holidayStrings.has(toDateString(curr));
+    const isHoliday = config.holidayStrings.has(toDateString(currentDate));
 
     if (isWeekend || isHoliday) {
-      curr.setUTCDate(curr.getUTCDate() + 1);
-      curr.setUTCHours(0, 0, 0, 0);
+      currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+      currentDate.setUTCHours(0, 0, 0, 0);
       continue;
     }
 
-    const hour = curr.getUTCHours();
-    const min = curr.getUTCMinutes();
-    const sec = curr.getUTCSeconds();
-    const ms = curr.getUTCMilliseconds();
+    const hour = currentDate.getUTCHours();
+    const min = currentDate.getUTCMinutes();
+    const sec = currentDate.getUTCSeconds();
+    const ms = currentDate.getUTCMilliseconds();
     const timeInHours = hour + min / 60 + sec / 3600 + ms / 3600000;
 
-    if (timeInHours < config.startHour) {
-      curr.setUTCHours(config.startHour, 0, 0, 0);
-      return curr;
-    } else if (timeInHours >= config.endHour) {
-      curr.setUTCDate(curr.getUTCDate() + 1);
-      curr.setUTCHours(0, 0, 0, 0);
+    if (timeInHours < BUSINESS_START_HOUR) {
+      currentDate.setUTCHours(BUSINESS_START_HOUR, 0, 0, 0);
+      return currentDate;
+    } else if (timeInHours >= BUSINESS_END_HOUR) {
+      currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+      currentDate.setUTCHours(0, 0, 0, 0);
       continue;
     } else {
-      return curr;
+      return currentDate;
     }
   }
 }
@@ -142,27 +205,24 @@ function addBusinessDuration(
   durationMs: number,
   config: ResolvedBusinessHoursConfig
 ): Date {
-  // Convert UTC to local perspective
   const localStart = new Date(start.getTime() + config.timezoneOffsetMs);
-  let curr = advanceToNextBusinessWindow(localStart, config);
+  let currentDate = advanceToNextBusinessWindow(localStart, config);
   let remainingMs = durationMs;
 
   while (remainingMs > 0) {
-    const endOfDay = new Date(curr.getTime());
-    endOfDay.setUTCHours(config.endHour, 0, 0, 0);
-
-    const availableMsInDay = endOfDay.getTime() - curr.getTime();
+    const endOfDay = getEndOfBusinessDay(currentDate);
+    const availableMsInDay = endOfDay.getTime() - currentDate.getTime();
 
     if (remainingMs <= availableMsInDay) {
-      const localResult = new Date(curr.getTime() + remainingMs);
+      const localResult = new Date(currentDate.getTime() + remainingMs);
       return new Date(localResult.getTime() - config.timezoneOffsetMs);
     } else {
       remainingMs -= availableMsInDay;
-      curr = advanceToNextBusinessWindow(endOfDay, config);
+      currentDate = advanceToNextBusinessWindow(endOfDay, config);
     }
   }
 
-  return new Date(curr.getTime() - config.timezoneOffsetMs);
+  return new Date(currentDate.getTime() - config.timezoneOffsetMs);
 }
 
 function calculateBusinessDurationMs(
@@ -177,23 +237,22 @@ function calculateBusinessDurationMs(
   const localFrom = new Date(from.getTime() + config.timezoneOffsetMs);
   const localTo = new Date(to.getTime() + config.timezoneOffsetMs);
 
-  let curr = advanceToNextBusinessWindow(localFrom, config);
-  if (curr.getTime() >= localTo.getTime()) {
+  let currentDate = advanceToNextBusinessWindow(localFrom, config);
+  if (currentDate.getTime() >= localTo.getTime()) {
     return 0;
   }
 
   let totalMs = 0;
 
-  while (curr.getTime() < localTo.getTime()) {
-    const endOfDay = new Date(curr.getTime());
-    endOfDay.setUTCHours(config.endHour, 0, 0, 0);
+  while (currentDate.getTime() < localTo.getTime()) {
+    const endOfDay = getEndOfBusinessDay(currentDate);
 
     if (localTo.getTime() <= endOfDay.getTime()) {
-      totalMs += localTo.getTime() - curr.getTime();
+      totalMs += localTo.getTime() - currentDate.getTime();
       break;
     } else {
-      totalMs += endOfDay.getTime() - curr.getTime();
-      curr = advanceToNextBusinessWindow(endOfDay, config);
+      totalMs += endOfDay.getTime() - currentDate.getTime();
+      currentDate = advanceToNextBusinessWindow(endOfDay, config);
     }
   }
 
