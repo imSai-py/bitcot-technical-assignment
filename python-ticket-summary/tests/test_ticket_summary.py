@@ -6,9 +6,12 @@ from pathlib import Path
 DEFAULT_CSV_HEADER = "ticket_id,created_at,resolved_at,category,priority,status\n"
 
 
+CLI_PATH = str(Path(__file__).resolve().parent.parent / "ticket_summary.py")
+
+
 def run_cli(*args: str) -> subprocess.CompletedProcess:
     """Helper to run ticket_summary.py as a CLI process."""
-    cmd = [sys.executable, "ticket_summary.py", *args]
+    cmd = [sys.executable, CLI_PATH, *args]
     return subprocess.run(
         cmd,
         capture_output=True,
