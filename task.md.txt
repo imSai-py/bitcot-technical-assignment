@@ -1,6 +1,0 @@
-Build a command line tool, for example: python ticket_summary.py tickets.csv
-It should read the file and print a summary with:
-- The number of tickets in each category
-- The average resolution time
-Add pytest tests. Standard library only is fine; you may use pandas if you prefer.
-The columns are ticket_id, created_at, resolved_at, category, priority and status. If any requirement is unclear, ask me a clear question and say which assumption you will use until I answer.

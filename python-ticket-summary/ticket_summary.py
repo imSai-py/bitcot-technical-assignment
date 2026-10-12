@@ -5,6 +5,7 @@ import csv
 import json
 import sys
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -17,6 +18,18 @@ REQUIRED_COLUMNS = {
     "priority",
     "status",
 }
+
+RESOLVED_STATUSES = {"resolved", "closed"}
+
+
+@dataclass
+class TicketMetrics:
+    """Computed ticket summary metrics."""
+
+    category_counts: Counter
+    overall_average_seconds: Optional[float]
+    category_average_seconds: Dict[str, Optional[float]]
+    skipped_tickets: Dict[str, List[str]]
 
 
 def parse_iso_timestamp(ts_str: str) -> Optional[datetime]:
@@ -33,8 +46,11 @@ def parse_iso_timestamp(ts_str: str) -> Optional[datetime]:
         return None
 
 
-def format_duration(seconds: float) -> str:
+def format_duration(seconds: Optional[float]) -> str:
     """Format duration in seconds into human-readable duration string."""
+    if seconds is None:
+        return "N/A (No resolved tickets)"
+
     total_hours = seconds / 3600.0
     total_sec = round(seconds)
 
@@ -44,13 +60,11 @@ def format_duration(seconds: float) -> str:
     rem_sec = rem_sec % 3600
     minutes = rem_sec // 60
 
-    parts: List[str] = []
-    if days > 0:
-        parts.append(f"{days} day" if days == 1 else f"{days} days")
-    parts.append(f"{hours} hour" if hours == 1 else f"{hours} hours")
-    parts.append(f"{minutes} minute" if minutes == 1 else f"{minutes} minutes")
+    days_label = f"{days} day" if days == 1 else f"{days} days"
+    hours_label = f"{hours} hour" if hours == 1 else f"{hours} hours"
+    minutes_label = f"{minutes} minute" if minutes == 1 else f"{minutes} minutes"
 
-    formatted_str = ", ".join(parts)
+    formatted_str = f"{days_label}, {hours_label}, {minutes_label}"
     return f"{formatted_str} ({total_hours:.2f} hours)"
 
 
@@ -94,7 +108,6 @@ def read_and_validate_csv(
             row_warnings: List[str] = []
 
             for row_idx, row in enumerate(reader, start=2):
-                # Skip completely blank lines
                 if not row or not any(cell.strip() for cell in row):
                     continue
 
@@ -111,6 +124,16 @@ def read_and_validate_csv(
                 category = row_dict.get("category", "").strip()
                 if not category:
                     row_warnings.append(f"Warning: {ticket_id}: Missing category.")
+                    continue
+
+                priority = row_dict.get("priority", "").strip()
+                if not priority:
+                    row_warnings.append(f"Warning: {ticket_id}: Missing priority.")
+                    continue
+
+                status = row_dict.get("status", "").strip()
+                if not status:
+                    row_warnings.append(f"Warning: {ticket_id}: Missing status.")
                     continue
 
                 created_str = row_dict.get("created_at", "").strip()
@@ -130,13 +153,15 @@ def read_and_validate_csv(
 
 def compute_metrics(
     rows: List[Dict[str, str]],
-) -> Tuple[Dict[str, object], List[str]]:
+) -> Tuple[TicketMetrics, List[str]]:
     """Compute category counts, resolution metrics, and track skipped tickets.
 
     Returns:
-        Tuple of (metrics_dict, resolution_warnings)
+        Tuple of (TicketMetrics, resolution_warnings)
     """
-    category_counts = Counter(row.get("category", "Uncategorized") for row in rows)
+    category_counts: Counter = Counter(
+        row.get("category", "Uncategorized") for row in rows
+    )
     category_durations: Dict[str, List[float]] = defaultdict(list)
     all_durations: List[float] = []
 
@@ -145,11 +170,17 @@ def compute_metrics(
 
     for row in rows:
         ticket_id = row.get("ticket_id", "")
+        category = row.get("category", "Uncategorized")
         created_dt = parse_iso_timestamp(row.get("created_at", ""))
         resolved_str = row.get("resolved_at", "").strip()
+        status = row.get("status", "").strip().lower()
 
         if not resolved_str:
             skipped_tickets["Unresolved / Missing resolution date"].append(ticket_id)
+            continue
+
+        if status not in RESOLVED_STATUSES:
+            skipped_tickets["Unresolved / Non-resolved status"].append(ticket_id)
             continue
 
         resolved_dt = parse_iso_timestamp(resolved_str)
@@ -170,121 +201,84 @@ def compute_metrics(
         if created_dt and resolved_dt >= created_dt:
             dur_seconds = (resolved_dt - created_dt).total_seconds()
             all_durations.append(dur_seconds)
-            category = row.get("category", "Uncategorized")
             category_durations[category].append(dur_seconds)
 
     overall_avg_sec = sum(all_durations) / len(all_durations) if all_durations else None
 
     category_averages: Dict[str, Optional[float]] = {}
-    for cat in sorted(category_counts.keys()):
-        durs = category_durations.get(cat, [])
-        category_averages[cat] = sum(durs) / len(durs) if durs else None
+    for category in sorted(category_counts.keys()):
+        durations = category_durations.get(category, [])
+        category_averages[category] = (
+            sum(durations) / len(durations) if durations else None
+        )
 
-    metrics = {
-        "total_tickets": len(rows),
-        "category_counts": category_counts,
-        "overall_average_seconds": overall_avg_sec,
-        "category_average_seconds": category_averages,
-        "skipped_tickets": skipped_tickets,
-    }
+    metrics = TicketMetrics(
+        category_counts=category_counts,
+        overall_average_seconds=overall_avg_sec,
+        category_average_seconds=category_averages,
+        skipped_tickets=skipped_tickets,
+    )
     return metrics, resolution_warnings
 
 
-def format_summary_text(metrics: Dict[str, object]) -> str:
+def format_summary_text(metrics: TicketMetrics) -> str:
     """Format ticket metrics into clean text output."""
-    total_tickets = metrics["total_tickets"]
-    category_counts: Counter = metrics["category_counts"]  # type: ignore
-    overall_avg_sec: Optional[float] = metrics["overall_average_seconds"]  # type: ignore
-    category_averages: Dict[str, Optional[float]] = metrics[
-        "category_average_seconds"
-    ]  # type: ignore
-    skipped_tickets: Dict[str, List[str]] = metrics["skipped_tickets"]  # type: ignore
-
-    if overall_avg_sec is not None:
-        overall_avg_str = format_duration(overall_avg_sec)
-    else:
-        overall_avg_str = "N/A (No resolved tickets)"
+    overall_avg_str = format_duration(metrics.overall_average_seconds)
 
     lines: List[str] = [
         "Ticket Summary",
         "==============",
-        f"Total Tickets: {total_tickets}",
         f"Average Resolution Time: {overall_avg_str}",
         "",
         "Tickets by Category:",
     ]
 
-    for category in sorted(category_counts.keys()):
-        count = category_counts[category]
-        cat_avg = category_averages.get(category)
-        if cat_avg is not None:
-            cat_avg_str = format_duration(cat_avg)
-        else:
-            cat_avg_str = "N/A (No resolved tickets)"
+    for category in sorted(metrics.category_counts.keys()):
+        count = metrics.category_counts[category]
+        cat_avg_str = format_duration(metrics.category_average_seconds.get(category))
         lines.append(f"  {category}: {count} (Avg Resolution: {cat_avg_str})")
 
-    if skipped_tickets:
+    if metrics.skipped_tickets:
         lines.append("")
         lines.append("Skipped Tickets (Resolution Time):")
         preferred_reasons = [
             "Unresolved / Missing resolution date",
+            "Unresolved / Non-resolved status",
             "Resolved before created",
             "Invalid resolution date",
         ]
         all_reasons = preferred_reasons + [
-            r for r in sorted(skipped_tickets.keys()) if r not in preferred_reasons
+            r
+            for r in sorted(metrics.skipped_tickets.keys())
+            if r not in preferred_reasons
         ]
         for reason in all_reasons:
-            if reason in skipped_tickets and skipped_tickets[reason]:
-                tids = ", ".join(skipped_tickets[reason])
-                lines.append(f"  {reason}: {tids}")
+            ticket_ids = metrics.skipped_tickets.get(reason, [])
+            if ticket_ids:
+                ticket_ids_str = ", ".join(ticket_ids)
+                lines.append(f"  {reason}: {ticket_ids_str}")
 
     return "\n".join(lines)
 
 
-def format_summary_json(metrics: Dict[str, object]) -> str:
+def format_summary_json(metrics: TicketMetrics) -> str:
     """Format ticket metrics into machine-readable JSON."""
-    total_tickets = metrics["total_tickets"]
-    category_counts: Counter = metrics["category_counts"]  # type: ignore
-    overall_avg_sec: Optional[float] = metrics["overall_average_seconds"]  # type: ignore
-    category_averages: Dict[str, Optional[float]] = metrics[
-        "category_average_seconds"
-    ]  # type: ignore
-    skipped_tickets: Dict[str, List[str]] = metrics["skipped_tickets"]  # type: ignore
-
     categories_detail = {}
-    for cat in sorted(category_counts.keys()):
-        avg_sec = category_averages.get(cat)
-        categories_detail[cat] = {
-            "count": category_counts[cat],
-            "average_resolution_seconds": avg_sec,
-            "average_resolution_hours": (
-                round(avg_sec / 3600.0, 2) if avg_sec is not None else None
-            ),
-            "average_resolution_formatted": (
-                format_duration(avg_sec)
-                if avg_sec is not None
-                else "N/A (No resolved tickets)"
+    for category in sorted(metrics.category_counts.keys()):
+        categories_detail[category] = {
+            "count": metrics.category_counts[category],
+            "average_resolution_time": format_duration(
+                metrics.category_average_seconds.get(category)
             ),
         }
 
-    overall_hours = (
-        round(overall_avg_sec / 3600.0, 2) if overall_avg_sec is not None else None
-    )
-    overall_formatted = (
-        format_duration(overall_avg_sec)
-        if overall_avg_sec is not None
-        else "N/A (No resolved tickets)"
-    )
-
     payload = {
-        "total_tickets": total_tickets,
-        "overall_average_seconds": overall_avg_sec,
-        "overall_average_hours": overall_hours,
-        "overall_average_formatted": overall_formatted,
-        "category_counts": dict(sorted(category_counts.items())),
+        "category_counts": dict(sorted(metrics.category_counts.items())),
+        "overall_average_resolution_time": format_duration(
+            metrics.overall_average_seconds
+        ),
         "categories": categories_detail,
-        "skipped_tickets": dict(skipped_tickets),
+        "skipped_tickets": dict(metrics.skipped_tickets),
     }
     return json.dumps(payload, indent=2)
 
