@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main, dev, staging]
+  pull_request:
+    branches: [master, main, dev, staging]
+
+jobs:
+  test-python:
+    name: Test Python Projects
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest
+
+      - name: Run debug-warmup tests
+        run: |
+          cd debug-warmup
+          pytest tests
+
+      - name: Run python-ticket-summary tests
+        run: |
+          cd python-ticket-summary
+          pytest tests
+
+  test-typescript:
+    name: Test TypeScript SLA Library
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: |
+          cd typescript-sla-library
+          npm ci
+
+      - name: Run TypeScript tests
+        run: |
+          cd typescript-sla-library
+          npm test
+
+      - name: Build TypeScript bundle
+        run: |
+          cd typescript-sla-library
+          npm run build
