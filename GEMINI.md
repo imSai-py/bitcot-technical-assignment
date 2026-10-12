@@ -21,10 +21,49 @@
 - **Code Integrity**: Preserve existing docstrings, type annotations, and comments unless explicitly instructed otherwise.
 
 ## 4. Pull Request (PR) & Ticket Lifecycle
-- **PR Generation Skill**: Whenever working on a PR, invoke and follow the **`/pr` skill** to structure the PR body:
-  - **Summary**: Visual diagram, call tree, or diff-sketch.
-  - **Evidence**: Concrete before/after execution evidence or test output.
-  - **Merge Danger**: Door type (one-way vs two-way) and blast radius assessment.
+- **PR Structure Template**: Every PR body must follow this exact template structure:
+  ```markdown
+  ## Summary
+
+  <Visual diagram, call tree, diff-sketch, or shallow file tree>
+
+  ## Verified end to end
+
+  - <Concrete end-to-end verification workflows, execution scenarios, edge-case validations>
+
+  ## Verification
+
+  - `<command>` — passed (<evidence / test counts>)
+
+  ## Engineering practices applied
+
+  - <Key design principles, typed boundaries, isolated state, synthetic fixtures, standard library constraints>
+
+  ## Review
+
+  - **Standards:** <StandardsReview findings and conventions adherence>
+  - **Spec:** <SpecReview findings and functional requirements coverage>
+
+  ## Follow-ups
+
+  - <Upcoming tickets, follow-up items, or out-of-scope enhancements>
+
+  ## Merge Danger
+
+  **Door:** <one-way or two-way with rollback rationale>
+  **Blast Radius:** <isolated / narrow / medium / broad with scope assessment>
+
+  <!-- This is an auto-generated comment: release notes by coderabbit.ai -->
+
+  ## Summary by CodeRabbit
+
+  * **New Features**
+    * <bullet points of new capabilities>
+  * **Bug Fixes**
+    * <bullet points of bug fixes, if applicable>
+
+  <!-- end of auto-generated comment: release notes by coderabbit.ai -->
+  ```
 - **PR Completion Gate**: Upon opening or completing a PR:
   1. Provide the clickable link to the PR.
   2. Ask: *"Would you like to proceed with the next ticket?"*
