@@ -55,17 +55,21 @@ def format_duration(seconds: float) -> str:
 
 def read_and_validate_csv(
     file_path: Path,
-) -> Tuple[List[Dict[str, str]], List[str]]:
-    """Read CSV file, validate required headers, and trim whitespace.
+) -> Tuple[List[Dict[str, str]], List[str], List[str]]:
+    """Read CSV file, validate headers, trim whitespace, and validate rows.
 
     Returns:
-        Tuple of (valid_rows, error_messages)
+        Tuple of (valid_rows, fatal_errors, row_warnings)
     """
     if not file_path.exists():
-        return [], [f"Error: File '{file_path}' does not exist."]
+        return [], [f"Error: File '{file_path}' does not exist."], []
 
     if file_path.is_dir():
-        return [], [f"Error: Path '{file_path}' is a directory, not a file."]
+        return (
+            [],
+            [f"Error: Path '{file_path}' is a directory, not a file."],
+            [],
+        )
 
     try:
         with open(file_path, mode="r", encoding="utf-8-sig") as f:
@@ -73,42 +77,96 @@ def read_and_validate_csv(
             header_row = next(reader, None)
 
             if header_row is None:
-                return [], [f"Error: File '{file_path}' is empty."]
+                return [], [f"Error: File '{file_path}' is empty."], []
 
             clean_headers = [col.strip() for col in header_row]
             missing_cols = REQUIRED_COLUMNS - set(clean_headers)
             if missing_cols:
                 missing_str = ", ".join(sorted(missing_cols))
-                return [], [f"Error: Missing required column(s): {missing_str}."]
+                return (
+                    [],
+                    [f"Error: Missing required column(s): {missing_str}."],
+                    [],
+                )
 
-            rows: List[Dict[str, str]] = []
-            for row in reader:
-                # Skip empty lines
+            valid_rows: List[Dict[str, str]] = []
+            row_warnings: List[str] = []
+
+            for row_idx, row in enumerate(reader, start=2):
+                # Skip completely blank lines
                 if not row or not any(cell.strip() for cell in row):
                     continue
-                # Map row to headers
+
                 padded_row = row + [""] * (len(clean_headers) - len(row))
                 row_dict = {
                     h: padded_row[idx].strip() for idx, h in enumerate(clean_headers)
                 }
-                rows.append(row_dict)
 
-            return rows, []
+                ticket_id = row_dict.get("ticket_id", "").strip()
+                if not ticket_id:
+                    row_warnings.append(f"Warning: Row {row_idx}: Missing ticket_id.")
+                    continue
+
+                category = row_dict.get("category", "").strip()
+                if not category:
+                    row_warnings.append(f"Warning: {ticket_id}: Missing category.")
+                    continue
+
+                created_str = row_dict.get("created_at", "").strip()
+                created_dt = parse_iso_timestamp(created_str)
+                if not created_str or created_dt is None:
+                    row_warnings.append(
+                        f"Warning: {ticket_id}: Invalid or missing created_at."
+                    )
+                    continue
+
+                valid_rows.append(row_dict)
+
+            return valid_rows, [], row_warnings
     except Exception as exc:
-        return [], [f"Error reading '{file_path}': {exc}"]
+        return [], [f"Error reading '{file_path}': {exc}"], []
 
 
-def compute_metrics(rows: List[Dict[str, str]]) -> Dict[str, object]:
-    """Compute category counts and resolution metrics from ticket rows."""
+def compute_metrics(
+    rows: List[Dict[str, str]],
+) -> Tuple[Dict[str, object], List[str]]:
+    """Compute category counts, resolution metrics, and track skipped tickets.
+
+    Returns:
+        Tuple of (metrics_dict, resolution_warnings)
+    """
     category_counts = Counter(row.get("category", "Uncategorized") for row in rows)
     category_durations: Dict[str, List[float]] = defaultdict(list)
     all_durations: List[float] = []
 
-    for row in rows:
-        created_dt = parse_iso_timestamp(row.get("created_at", ""))
-        resolved_dt = parse_iso_timestamp(row.get("resolved_at", ""))
+    skipped_tickets: Dict[str, List[str]] = defaultdict(list)
+    resolution_warnings: List[str] = []
 
-        if created_dt and resolved_dt and resolved_dt >= created_dt:
+    for row in rows:
+        ticket_id = row.get("ticket_id", "")
+        created_dt = parse_iso_timestamp(row.get("created_at", ""))
+        resolved_str = row.get("resolved_at", "").strip()
+
+        if not resolved_str:
+            skipped_tickets["Unresolved / Missing resolution date"].append(ticket_id)
+            continue
+
+        resolved_dt = parse_iso_timestamp(resolved_str)
+        if resolved_dt is None:
+            resolution_warnings.append(
+                f"Warning: {ticket_id}: Invalid resolved_at timestamp."
+            )
+            skipped_tickets["Invalid resolution date"].append(ticket_id)
+            continue
+
+        if created_dt and resolved_dt < created_dt:
+            resolution_warnings.append(
+                f"Warning: {ticket_id}: Resolved date earlier than created" " date."
+            )
+            skipped_tickets["Resolved before created"].append(ticket_id)
+            continue
+
+        if created_dt and resolved_dt >= created_dt:
             dur_seconds = (resolved_dt - created_dt).total_seconds()
             all_durations.append(dur_seconds)
             category = row.get("category", "Uncategorized")
@@ -121,12 +179,14 @@ def compute_metrics(rows: List[Dict[str, str]]) -> Dict[str, object]:
         durs = category_durations.get(cat, [])
         category_averages[cat] = sum(durs) / len(durs) if durs else None
 
-    return {
+    metrics = {
         "total_tickets": len(rows),
         "category_counts": category_counts,
         "overall_average_seconds": overall_avg_sec,
         "category_average_seconds": category_averages,
+        "skipped_tickets": skipped_tickets,
     }
+    return metrics, resolution_warnings
 
 
 def format_summary_text(metrics: Dict[str, object]) -> str:
@@ -137,6 +197,7 @@ def format_summary_text(metrics: Dict[str, object]) -> str:
     category_averages: Dict[str, Optional[float]] = metrics[
         "category_average_seconds"
     ]  # type: ignore
+    skipped_tickets: Dict[str, List[str]] = metrics["skipped_tickets"]  # type: ignore
 
     if overall_avg_sec is not None:
         overall_avg_str = format_duration(overall_avg_sec)
@@ -161,18 +222,41 @@ def format_summary_text(metrics: Dict[str, object]) -> str:
             cat_avg_str = "N/A (No resolved tickets)"
         lines.append(f"  {category}: {count} (Avg Resolution: {cat_avg_str})")
 
+    if skipped_tickets:
+        lines.append("")
+        lines.append("Skipped Tickets (Resolution Time):")
+        # Define clean ordering for skip reasons
+        preferred_reasons = [
+            "Unresolved / Missing resolution date",
+            "Resolved before created",
+            "Invalid resolution date",
+        ]
+        all_reasons = preferred_reasons + [
+            r for r in sorted(skipped_tickets.keys()) if r not in preferred_reasons
+        ]
+        for reason in all_reasons:
+            if reason in skipped_tickets and skipped_tickets[reason]:
+                tids = ", ".join(skipped_tickets[reason])
+                lines.append(f"  {reason}: {tids}")
+
     return "\n".join(lines)
 
 
 def process_tickets(file_path: Path) -> int:
     """Core processor for ticket CSV file."""
-    rows, errors = read_and_validate_csv(file_path)
-    if errors:
-        for err in errors:
+    rows, fatal_errors, row_warnings = read_and_validate_csv(file_path)
+    if fatal_errors:
+        for err in fatal_errors:
             print(err, file=sys.stderr)
         return 1
 
-    metrics = compute_metrics(rows)
+    for warn in row_warnings:
+        print(warn, file=sys.stderr)
+
+    metrics, resolution_warnings = compute_metrics(rows)
+    for warn in resolution_warnings:
+        print(warn, file=sys.stderr)
+
     output = format_summary_text(metrics)
     print(output)
     return 0
