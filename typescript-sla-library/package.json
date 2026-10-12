@@ -1,0 +1,29 @@
+{
+  "name": "typescript-sla-library",
+  "version": "1.0.0",
+  "description": "Typed TypeScript library to calculate SLA deadlines and breaches",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "demo": "tsx scripts/demo.ts",
+    "manual": "tsx scripts/manual-test.ts"
+  },
+  "keywords": [
+    "sla",
+    "typescript",
+    "ticket",
+    "deadline"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.4"
+  }
+}

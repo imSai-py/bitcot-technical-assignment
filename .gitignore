@@ -1,6 +1,6 @@
-__pycache__/
+﻿__pycache__/
 *.py[cod]
-*$py.class
+*.class
 .pytest_cache/
 .coverage
 htmlcov/
@@ -11,3 +11,5 @@ build/
 .venv/
 env/
 venv/
+node_modules/
+_backup/
