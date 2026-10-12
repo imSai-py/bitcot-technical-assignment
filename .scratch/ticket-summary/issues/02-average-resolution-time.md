@@ -4,12 +4,12 @@
 
 **Blocked by:** 01: Baseline CLI Runner and Category Count Summary
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Parses standard ISO-8601 timestamps (`YYYY-MM-DD HH:MM:SS`, `YYYY-MM-DDTHH:MM:SS`, and timezone offsets) for `created_at` and `resolved_at`
-- [ ] Calculates `resolved_at - created_at` for resolved tickets where `resolved_at >= created_at`
-- [ ] Computes overall average resolution time across all resolved tickets
-- [ ] Computes average resolution time for each category
-- [ ] Formats durations as `X days, Y hours, Z minutes (Total.HH hours)`
-- [ ] Displays `"N/A (No resolved tickets)"` when no tickets in the dataset or category are resolved
-- [ ] Automated tests using `pytest` verify duration arithmetic, duration formatting, and zero resolved tickets
+- [x] Parses standard ISO-8601 timestamps (`YYYY-MM-DD HH:MM:SS`, `YYYY-MM-DDTHH:MM:SS`, and timezone offsets) for `created_at` and `resolved_at`
+- [x] Calculates `resolved_at - created_at` for resolved tickets where `resolved_at >= created_at`
+- [x] Computes overall average resolution time across all resolved tickets
+- [x] Computes average resolution time for each category
+- [x] Formats durations as `X days, Y hours, Z minutes (Total.HH hours)`
+- [x] Displays `"N/A (No resolved tickets)"` when no tickets in the dataset or category are resolved
+- [x] Automated tests using `pytest` verify duration arithmetic, duration formatting, and zero resolved tickets
