@@ -64,3 +64,58 @@ def test_whitespace_trimming_in_headers_and_values(tmp_path: Path):
     result = run_cli(str(csv_file))
     assert result.returncode == 0
     assert "Network: 2" in result.stdout
+
+
+def test_overall_and_category_average_resolution_time(tmp_path: Path):
+    csv_file = tmp_path / "resolution.csv"
+    csv_content = (
+        "ticket_id,created_at,resolved_at,category,priority,status\n"
+        "T-1,2026-01-01 10:00:00,2026-01-01 12:00:00,Billing,low,resolved\n"  # 2.0 hrs
+        "T-2,2026-01-01 10:00:00,2026-01-01 16:00:00,Billing,medium,resolved\n"  # 6.0 hrs -> Billing avg: 4.0 hrs
+        "T-3,2026-01-01 10:00:00,2026-01-02 10:00:00,Hardware,high,resolved\n"  # 24.0 hrs -> Hardware avg: 24.0 hrs
+    )
+    # Total = 32.0 hrs / 3 = 10.67 hrs (10 hours, 40 minutes)
+    csv_file.write_text(csv_content, encoding="utf-8")
+
+    result = run_cli(str(csv_file))
+    assert result.returncode == 0
+    assert "Average Resolution Time" in result.stdout
+    assert "10 hours, 40 minutes (10.67 hours)" in result.stdout
+    # Category level resolution times
+    assert (
+        "Billing: 2 (Avg Resolution: 4 hours, 0 minutes (4.00 hours))" in result.stdout
+    )
+    assert (
+        "Hardware: 1 (Avg Resolution: 1 day, 0 hours, 0 minutes (24.00 hours))"
+        in result.stdout
+    )
+
+
+def test_zero_resolved_tickets_displays_na(tmp_path: Path):
+    csv_file = tmp_path / "unresolved.csv"
+    csv_content = (
+        "ticket_id,created_at,resolved_at,category,priority,status\n"
+        "T-1,2026-01-01 10:00:00,,Support,low,open\n"
+        "T-2,2026-01-01 10:00:00,,Support,high,in_progress\n"
+    )
+    csv_file.write_text(csv_content, encoding="utf-8")
+
+    result = run_cli(str(csv_file))
+    assert result.returncode == 0
+    assert "Support: 2" in result.stdout
+    assert "N/A (No resolved tickets)" in result.stdout
+
+
+def test_iso_timestamp_variants_and_timezones(tmp_path: Path):
+    csv_file = tmp_path / "iso_variants.csv"
+    csv_content = (
+        "ticket_id,created_at,resolved_at,category,priority,status\n"
+        "T-1,2026-01-01T10:00:00,2026-01-01T12:30:00,Ops,low,resolved\n"  # 2h 30m = 2.50h
+        "T-2,2026-01-01T10:00:00Z,2026-01-01T14:00:00Z,Ops,high,resolved\n"  # 4h = 4.00h
+    )
+    # Total = 6.5h / 2 = 3.25h -> 3 hours, 15 minutes (3.25 hours)
+    csv_file.write_text(csv_content, encoding="utf-8")
+
+    result = run_cli(str(csv_file))
+    assert result.returncode == 0
+    assert "3 hours, 15 minutes (3.25 hours)" in result.stdout
