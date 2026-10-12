@@ -52,17 +52,6 @@
 
   **Door:** <one-way or two-way with rollback rationale>
   **Blast Radius:** <isolated / narrow / medium / broad with scope assessment>
-
-  <!-- This is an auto-generated comment: release notes by coderabbit.ai -->
-
-  ## Summary by CodeRabbit
-
-  * **New Features**
-    * <bullet points of new capabilities>
-  * **Bug Fixes**
-    * <bullet points of bug fixes, if applicable>
-
-  <!-- end of auto-generated comment: release notes by coderabbit.ai -->
   ```
 - **PR Completion Gate**: Upon opening or completing a PR:
   1. Provide the clickable link to the PR.
