@@ -85,3 +85,31 @@ def test_note_from_header_column(tmp_path: Path):
     metrics, _ = compute_metrics(rows)
     assert metrics.ticket_notes.get("T-10") == "urgent note"
 
+
+def test_duplicate_ticket_ids_skipped_and_warned(tmp_path: Path):
+    """Lead feedback 1: duplicate ticket IDs skipped."""
+    csv_file = tmp_path / "duplicates.csv"
+    csv_content = (
+        "ticket_id,created_at,resolved_at,category,priority,status\n"
+        "T-101,2026-01-01 10:00:00,2026-01-01 11:00:00,Billing,low,resolved\n"
+        "T-101,2026-01-01 10:00:00,2026-01-01 12:00:00,Billing,high,resolved\n"
+    )
+    csv_file.write_text(csv_content, encoding="utf-8")
+
+    rows, fatal, warnings = read_and_validate_csv(csv_file)
+    assert len(rows) == 1
+    assert any("Duplicate ticket ID" in w for w in warnings)
+
+
+def test_invalid_ticket_id_placeholder_rejected(tmp_path: Path):
+    """Lead feedback 3: invalid placeholder N/A ticket ID rejected."""
+    csv_file = tmp_path / "invalid_id.csv"
+    csv_content = (
+        "ticket_id,created_at,resolved_at,category,priority,status\n"
+        "N/A,2026-01-01 10:00:00,2026-01-01 11:00:00,Account,urgent,resolved\n"
+    )
+    csv_file.write_text(csv_content, encoding="utf-8")
+
+    rows, fatal, warnings = read_and_validate_csv(csv_file)
+    assert len(rows) == 0
+    assert any("Invalid ticket_id 'N/A'" in w for w in warnings)
