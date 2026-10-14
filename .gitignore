@@ -1,4 +1,4 @@
-﻿__pycache__/
+__pycache__/
 *.py[cod]
 *.class
 .pytest_cache/
@@ -13,3 +13,4 @@ env/
 venv/
 node_modules/
 _backup/
+artifacts/

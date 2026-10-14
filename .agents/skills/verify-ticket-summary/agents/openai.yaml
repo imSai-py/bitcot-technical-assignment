@@ -1,0 +1,3 @@
+interface:
+  display_name: "Verify Ticket Summary"
+  short_description: "Verify Python Ticket Summary CLI tool against regressions"

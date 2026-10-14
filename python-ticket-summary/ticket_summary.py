@@ -20,6 +20,33 @@ REQUIRED_COLUMNS = {
 }
 
 RESOLVED_STATUSES = {"resolved", "closed"}
+ESCALATED_STATUSES = {"escalated", "escalatd"}
+
+
+def _is_simple_casing(s: str) -> bool:
+    """Return True if string is entirely lowercase, uppercase, or capitalized."""
+    return s.islower() or s.isupper() or s == s.capitalize()
+
+
+def build_canonical_category_map(rows: List[Dict[str, str]]) -> Dict[str, str]:
+    """Build case-insensitive category map preferring mixed-case/title-case forms."""
+    canonical: Dict[str, str] = {}
+    for row in rows:
+        trimmed = row.get("category", "").strip()
+        if not trimmed:
+            continue
+        key = trimmed.lower()
+        if key not in canonical:
+            canonical[key] = (
+                trimmed.capitalize()
+                if (trimmed.islower() or trimmed.isupper())
+                else trimmed
+            )
+        else:
+            existing = canonical[key]
+            if _is_simple_casing(existing) and not _is_simple_casing(trimmed):
+                canonical[key] = trimmed
+    return canonical
 
 
 @dataclass
@@ -30,6 +57,9 @@ class TicketMetrics:
     overall_average_seconds: Optional[float]
     category_average_seconds: Dict[str, Optional[float]]
     skipped_tickets: Dict[str, List[str]]
+    resolved_tickets: List[str]
+    escalated_tickets: List[str]
+    ticket_notes: Dict[str, str]
 
 
 def parse_iso_timestamp(ts_str: str) -> Optional[datetime]:
@@ -107,6 +137,12 @@ def read_and_validate_csv(
             valid_rows: List[Dict[str, str]] = []
             row_warnings: List[str] = []
 
+            note_col_idx = None
+            for idx, h in enumerate(clean_headers):
+                if h.lower() in {"note", "notes"}:
+                    note_col_idx = idx
+                    break
+
             for row_idx, row in enumerate(reader, start=2):
                 if not row or not any(cell.strip() for cell in row):
                     continue
@@ -115,6 +151,13 @@ def read_and_validate_csv(
                 row_dict = {
                     h: padded_row[idx].strip() for idx, h in enumerate(clean_headers)
                 }
+                extra_cols = [c.strip() for c in row[len(clean_headers) :] if c.strip()]
+                header_note = (
+                    padded_row[note_col_idx].strip() if note_col_idx is not None else ""
+                )
+                all_notes = ([header_note] if header_note else []) + extra_cols
+                if all_notes:
+                    row_dict["_extra_note"] = ", ".join(all_notes)
 
                 ticket_id = row_dict.get("ticket_id", "").strip()
                 if not ticket_id:
@@ -159,21 +202,42 @@ def compute_metrics(
     Returns:
         Tuple of (TicketMetrics, resolution_warnings)
     """
-    category_counts: Counter = Counter(
-        row.get("category", "Uncategorized") for row in rows
-    )
+    canonical_categories = build_canonical_category_map(rows)
+
+    category_counts: Counter = Counter()
     category_durations: Dict[str, List[float]] = defaultdict(list)
     all_durations: List[float] = []
 
     skipped_tickets: Dict[str, List[str]] = defaultdict(list)
+    resolved_tickets: List[str] = []
+    escalated_tickets: List[str] = []
+    ticket_notes: Dict[str, str] = {}
     resolution_warnings: List[str] = []
 
     for row in rows:
         ticket_id = row.get("ticket_id", "")
-        category = row.get("category", "Uncategorized")
+        raw_cat = row.get("category", "Uncategorized").strip()
+        category = canonical_categories.get(
+            raw_cat.lower(), raw_cat if raw_cat else "Uncategorized"
+        )
+        category_counts[category] += 1
+
         created_dt = parse_iso_timestamp(row.get("created_at", ""))
         resolved_str = row.get("resolved_at", "").strip()
-        status = row.get("status", "").strip().lower()
+        raw_status = row.get("status", "").strip()
+        status = raw_status.lower()
+
+        # Track escalated status explicitly
+        if status in ESCALATED_STATUSES:
+            escalated_tickets.append(ticket_id)
+
+        # Track resolved tickets based on resolved status
+        if status in RESOLVED_STATUSES:
+            resolved_tickets.append(ticket_id)
+
+        # Track notes from extra columns or note fields
+        if "_extra_note" in row:
+            ticket_notes[ticket_id] = row["_extra_note"]
 
         if not resolved_str:
             skipped_tickets["Unresolved / Missing resolution date"].append(ticket_id)
@@ -193,7 +257,7 @@ def compute_metrics(
 
         if created_dt and resolved_dt < created_dt:
             resolution_warnings.append(
-                f"Warning: {ticket_id}: Resolved date earlier than created" " date."
+                f"Warning: {ticket_id}: Resolved date earlier than created date."
             )
             skipped_tickets["Resolved before created"].append(ticket_id)
             continue
@@ -217,6 +281,9 @@ def compute_metrics(
         overall_average_seconds=overall_avg_sec,
         category_average_seconds=category_averages,
         skipped_tickets=skipped_tickets,
+        resolved_tickets=resolved_tickets,
+        escalated_tickets=escalated_tickets,
+        ticket_notes=ticket_notes,
     )
     return metrics, resolution_warnings
 
@@ -237,6 +304,22 @@ def format_summary_text(metrics: TicketMetrics) -> str:
         count = metrics.category_counts[category]
         cat_avg_str = format_duration(metrics.category_average_seconds.get(category))
         lines.append(f"  {category}: {count} (Avg Resolution: {cat_avg_str})")
+
+    if metrics.resolved_tickets:
+        lines.append("")
+        lines.append("Resolved Tickets:")
+        lines.append(f"  {', '.join(metrics.resolved_tickets)}")
+
+    if metrics.escalated_tickets:
+        lines.append("")
+        lines.append("Escalated Tickets:")
+        lines.append(f"  {', '.join(metrics.escalated_tickets)}")
+
+    if metrics.ticket_notes:
+        lines.append("")
+        lines.append("Ticket Notes:")
+        for tid in sorted(metrics.ticket_notes.keys()):
+            lines.append(f"  {tid}: {metrics.ticket_notes[tid]}")
 
     if metrics.skipped_tickets:
         lines.append("")
@@ -278,6 +361,9 @@ def format_summary_json(metrics: TicketMetrics) -> str:
             metrics.overall_average_seconds
         ),
         "categories": categories_detail,
+        "resolved_tickets": metrics.resolved_tickets,
+        "escalated_tickets": metrics.escalated_tickets,
+        "ticket_notes": metrics.ticket_notes,
         "skipped_tickets": dict(metrics.skipped_tickets),
     }
     return json.dumps(payload, indent=2)
