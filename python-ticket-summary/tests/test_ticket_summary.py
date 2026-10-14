@@ -72,10 +72,13 @@ def test_whitespace_trimming_in_headers_and_values(tmp_path: Path):
 
 def test_overall_and_category_average_resolution_time(tmp_path: Path):
     csv_file = tmp_path / "resolution.csv"
-    csv_content = DEFAULT_CSV_HEADER + (
-        "T-1,2026-01-01 10:00:00,2026-01-01 12:00:00,Billing,low,resolved\n"  # 2.0 hrs
-        "T-2,2026-01-01 10:00:00,2026-01-01 16:00:00,Billing,medium,resolved\n"  # 6.0 hrs -> Billing avg: 4.0 hrs
-        "T-3,2026-01-01 10:00:00,2026-01-02 10:00:00,Hardware,high,resolved\n"  # 24.0 hrs -> Hardware avg: 24.0 hrs
+    csv_content = (
+        DEFAULT_CSV_HEADER
+        + (
+            "T-1,2026-01-01 10:00:00,2026-01-01 12:00:00,Billing,low,resolved\n"  # 2.0 hrs
+            "T-2,2026-01-01 10:00:00,2026-01-01 16:00:00,Billing,medium,resolved\n"  # 6.0 hrs -> Billing avg: 4.0 hrs
+            "T-3,2026-01-01 10:00:00,2026-01-02 10:00:00,Hardware,high,resolved\n"  # 24.0 hrs -> Hardware avg: 24.0 hrs
+        )
     )
     # Total = 32.0 hrs / 3 = 10.67 hrs (0 days, 10 hours, 40 minutes)
     csv_file.write_text(csv_content, encoding="utf-8")
@@ -111,9 +114,12 @@ def test_zero_resolved_tickets_displays_na(tmp_path: Path):
 
 def test_iso_timestamp_variants_and_timezones(tmp_path: Path):
     csv_file = tmp_path / "iso_variants.csv"
-    csv_content = DEFAULT_CSV_HEADER + (
-        "T-1,2026-01-01T10:00:00,2026-01-01T12:30:00,Ops,low,resolved\n"  # 2h 30m = 2.50h
-        "T-2,2026-01-01T10:00:00Z,2026-01-01T14:00:00Z,Ops,high,resolved\n"  # 4h = 4.00h
+    csv_content = (
+        DEFAULT_CSV_HEADER
+        + (
+            "T-1,2026-01-01T10:00:00,2026-01-01T12:30:00,Ops,low,resolved\n"  # 2h 30m = 2.50h
+            "T-2,2026-01-01T10:00:00Z,2026-01-01T14:00:00Z,Ops,high,resolved\n"  # 4h = 4.00h
+        )
     )
     # Total = 6.5h / 2 = 3.25h -> 0 days, 3 hours, 15 minutes (3.25 hours)
     csv_file.write_text(csv_content, encoding="utf-8")
@@ -125,13 +131,16 @@ def test_iso_timestamp_variants_and_timezones(tmp_path: Path):
 
 def test_malformed_rows_logged_to_stderr_and_valid_processed(tmp_path: Path):
     csv_file = tmp_path / "malformed.csv"
-    csv_content = DEFAULT_CSV_HEADER + (
-        ",2026-01-01 10:00:00,2026-01-01 11:00:00,Billing,low,resolved\n"  # Row 2 missing ticket_id
-        "T-99,bad-created-date,2026-01-01 11:00:00,Billing,low,resolved\n"  # T-99 bad created_at
-        "T-98,2026-01-01 10:00:00,2026-01-01 11:00:00,,low,resolved\n"  # T-98 missing category
-        "T-97,2026-01-01 10:00:00,2026-01-01 11:00:00,Billing,,resolved\n"  # T-97 missing priority
-        "T-96,2026-01-01 10:00:00,2026-01-01 11:00:00,Billing,low,\n"  # T-96 missing status
-        "T-1,2026-01-01 10:00:00,2026-01-01 12:00:00,Billing,high,resolved\n"  # valid
+    csv_content = (
+        DEFAULT_CSV_HEADER
+        + (
+            ",2026-01-01 10:00:00,2026-01-01 11:00:00,Billing,low,resolved\n"  # Row 2 missing ticket_id
+            "T-99,bad-created-date,2026-01-01 11:00:00,Billing,low,resolved\n"  # T-99 bad created_at
+            "T-98,2026-01-01 10:00:00,2026-01-01 11:00:00,,low,resolved\n"  # T-98 missing category
+            "T-97,2026-01-01 10:00:00,2026-01-01 11:00:00,Billing,,resolved\n"  # T-97 missing priority
+            "T-96,2026-01-01 10:00:00,2026-01-01 11:00:00,Billing,low,\n"  # T-96 missing status
+            "T-1,2026-01-01 10:00:00,2026-01-01 12:00:00,Billing,high,resolved\n"  # valid
+        )
     )
     csv_file.write_text(csv_content, encoding="utf-8")
 
@@ -149,12 +158,15 @@ def test_malformed_rows_logged_to_stderr_and_valid_processed(tmp_path: Path):
 
 def test_skipped_tickets_reporting_on_stdout(tmp_path: Path):
     csv_file = tmp_path / "skipped.csv"
-    csv_content = DEFAULT_CSV_HEADER + (
-        "T-100,2026-01-01 10:00:00,2026-01-01 12:00:00,DevOps,high,resolved\n"  # valid (2h)
-        "T-101,2026-01-01 10:00:00,,DevOps,low,open\n"  # unresolved (missing date)
-        "T-102,2026-01-02 10:00:00,2026-01-01 10:00:00,DevOps,medium,resolved\n"  # resolved before created
-        "T-103,2026-01-01 10:00:00,corrupted-date,DevOps,low,resolved\n"  # invalid resolved_at
-        "T-104,2026-01-01 10:00:00,2026-01-01 12:00:00,DevOps,low,in_progress\n"  # non-resolved status
+    csv_content = (
+        DEFAULT_CSV_HEADER
+        + (
+            "T-100,2026-01-01 10:00:00,2026-01-01 12:00:00,DevOps,high,resolved\n"  # valid (2h)
+            "T-101,2026-01-01 10:00:00,,DevOps,low,open\n"  # unresolved (missing date)
+            "T-102,2026-01-02 10:00:00,2026-01-01 10:00:00,DevOps,medium,resolved\n"  # resolved before created
+            "T-103,2026-01-01 10:00:00,corrupted-date,DevOps,low,resolved\n"  # invalid resolved_at
+            "T-104,2026-01-01 10:00:00,2026-01-01 12:00:00,DevOps,low,in_progress\n"  # non-resolved status
+        )
     )
     csv_file.write_text(csv_content, encoding="utf-8")
 
@@ -178,10 +190,13 @@ def test_skipped_tickets_reporting_on_stdout(tmp_path: Path):
 
 def test_json_output_flag(tmp_path: Path):
     csv_file = tmp_path / "tickets.csv"
-    csv_content = DEFAULT_CSV_HEADER + (
-        "T-1,2026-01-01 10:00:00,2026-01-01 12:00:00,Billing,low,resolved\n"  # 2.0 hrs
-        "T-2,2026-01-01 10:00:00,2026-01-01 16:00:00,Billing,medium,resolved\n"  # 6.0 hrs
-        "T-3,2026-01-01 10:00:00,,Hardware,high,open\n"  # unresolved
+    csv_content = (
+        DEFAULT_CSV_HEADER
+        + (
+            "T-1,2026-01-01 10:00:00,2026-01-01 12:00:00,Billing,low,resolved\n"  # 2.0 hrs
+            "T-2,2026-01-01 10:00:00,2026-01-01 16:00:00,Billing,medium,resolved\n"  # 6.0 hrs
+            "T-3,2026-01-01 10:00:00,,Hardware,high,open\n"  # unresolved
+        )
     )
     csv_file.write_text(csv_content, encoding="utf-8")
 
@@ -207,9 +222,12 @@ def test_json_output_flag(tmp_path: Path):
 
 def test_json_output_with_warnings_keeps_stdout_valid_json(tmp_path: Path):
     csv_file = tmp_path / "mixed.csv"
-    csv_content = DEFAULT_CSV_HEADER + (
-        ",2026-01-01 10:00:00,2026-01-01 11:00:00,Billing,low,resolved\n"  # Row 2 missing ticket_id
-        "T-1,2026-01-01 10:00:00,2026-01-01 12:00:00,Billing,high,resolved\n"  # valid
+    csv_content = (
+        DEFAULT_CSV_HEADER
+        + (
+            ",2026-01-01 10:00:00,2026-01-01 11:00:00,Billing,low,resolved\n"  # Row 2 missing ticket_id
+            "T-1,2026-01-01 10:00:00,2026-01-01 12:00:00,Billing,high,resolved\n"  # valid
+        )
     )
     csv_file.write_text(csv_content, encoding="utf-8")
 
@@ -219,3 +237,84 @@ def test_json_output_with_warnings_keeps_stdout_valid_json(tmp_path: Path):
     assert "Row 2: Missing ticket_id" in result.stderr
     data = json.loads(result.stdout)
     assert data["category_counts"] == {"Billing": 1}
+
+
+def test_category_casing_merged_to_canonical(tmp_path: Path):
+    csv_file = tmp_path / "casing.csv"
+    csv_content = DEFAULT_CSV_HEADER + (
+        "T-1,2026-01-01 10:00:00,2026-01-01 11:00:00,Billing,low,resolved\n"
+        "T-2,2026-01-01 10:00:00,2026-01-01 12:00:00,billing,normal,resolved\n"
+        "T-3,2026-01-01 10:00:00,2026-01-01 13:00:00,BILLING,high,resolved\n"
+    )
+    csv_file.write_text(csv_content, encoding="utf-8")
+
+    result = run_cli(str(csv_file))
+    assert result.returncode == 0
+    assert "Billing: 3" in result.stdout
+    assert "billing: 1" not in result.stdout
+    assert "BILLING: 1" not in result.stdout
+
+
+def test_escalated_tickets_section(tmp_path: Path):
+    csv_file = tmp_path / "escalated.csv"
+    csv_content = DEFAULT_CSV_HEADER + (
+        "T-1,2026-01-01 10:00:00,2026-01-01 11:00:00,Billing,low,resolved\n"
+        "T-2,2026-01-01 10:00:00,,Billing,normal,escalated\n"
+        "T-3,2026-01-01 10:00:00,,Billing,normal,escalatd\n"
+    )
+    csv_file.write_text(csv_content, encoding="utf-8")
+
+    result = run_cli(str(csv_file))
+    assert result.returncode == 0
+    assert "Escalated Tickets:" in result.stdout
+    assert "T-2" in result.stdout
+    assert "T-3" in result.stdout
+
+    json_result = run_cli(str(csv_file), "--json")
+    data = json.loads(json_result.stdout)
+    assert "escalated_tickets" in data
+    assert "T-2" in data["escalated_tickets"]
+    assert "T-3" in data["escalated_tickets"]
+
+
+def test_extra_column_note_handling(tmp_path: Path):
+    csv_file = tmp_path / "extra_col.csv"
+    csv_content = DEFAULT_CSV_HEADER + (
+        "TCK-2999,2026-03-09 10:13,,Refunds,normal,open,note: sent by phone\n"
+    )
+    csv_file.write_text(csv_content, encoding="utf-8")
+
+    result = run_cli(str(csv_file))
+    assert result.returncode == 0
+    assert "Ticket Notes:" in result.stdout
+    assert "TCK-2999: note: sent by phone" in result.stdout
+
+    json_result = run_cli(str(csv_file), "--json")
+    data = json.loads(json_result.stdout)
+    assert "ticket_notes" in data
+    assert data["ticket_notes"].get("TCK-2999") == "note: sent by phone"
+
+
+def test_resolved_tickets_section(tmp_path: Path):
+    csv_file = tmp_path / "resolved.csv"
+    csv_content = DEFAULT_CSV_HEADER + (
+        "T-10,2026-01-01 10:00:00,2026-01-01 11:00:00,Hardware,high,resolved\n"
+        "T-20,2026-01-01 10:00:00,2026-01-01 12:00:00,Billing,low,closed\n"
+        "T-30,2026-01-01 10:00:00,,Billing,medium,open\n"
+    )
+    csv_file.write_text(csv_content, encoding="utf-8")
+
+    result = run_cli(str(csv_file))
+    assert result.returncode == 0
+    assert "Resolved Tickets:" in result.stdout
+    assert "T-10" in result.stdout
+    assert "T-20" in result.stdout
+    assert (
+        "T-30"
+        not in result.stdout.split("Resolved Tickets:")[1].split("Skipped Tickets")[0]
+    )
+
+    json_result = run_cli(str(csv_file), "--json")
+    data = json.loads(json_result.stdout)
+    assert "resolved_tickets" in data
+    assert data["resolved_tickets"] == ["T-10", "T-20"]
