@@ -136,6 +136,7 @@ def read_and_validate_csv(
 
             valid_rows: List[Dict[str, str]] = []
             row_warnings: List[str] = []
+            seen_ticket_ids: set = set()
 
             note_col_idx = None
             for idx, h in enumerate(clean_headers):
@@ -164,6 +165,18 @@ def read_and_validate_csv(
                     row_warnings.append(f"Warning: Row {row_idx}: Missing ticket_id.")
                     continue
 
+                if ticket_id.upper() in {"N/A", "NA", "NONE", "NULL"}:
+                    row_warnings.append(
+                        f"Warning: Row {row_idx}: Invalid ticket_id '{ticket_id}'."
+                    )
+                    continue
+
+                if ticket_id in seen_ticket_ids:
+                    row_warnings.append(
+                        f"Warning: {ticket_id}: Duplicate ticket ID (skipped)."
+                    )
+                    continue
+
                 category = row_dict.get("category", "").strip()
                 if not category:
                     row_warnings.append(f"Warning: {ticket_id}: Missing category.")
@@ -188,8 +201,10 @@ def read_and_validate_csv(
                     continue
 
                 valid_rows.append(row_dict)
+                seen_ticket_ids.add(ticket_id)
 
             return valid_rows, [], row_warnings
+
     except Exception as exc:
         return [], [f"Error reading '{file_path}': {exc}"], []
 
